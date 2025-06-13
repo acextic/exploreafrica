@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Vite and Tailwind cache
+.vite
+.tailwind
+
+# Test coverage
+coverage
+
+# Local env files
+.env
+.env.*
