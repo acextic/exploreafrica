@@ -1,3 +1,72 @@
+# Explore Africa
+
+Explore Africa is a responsive web application built with React and Tailwind CSS. It serves as a digital booking platform for accommodations and tour experiences in African safari regions.
+
+## Features
+
+- Interactive homepage with hero section and navigation
+- Responsive layout for desktop and mobile
+- Modular component architecture
+- Git-based version control and collaboration setup
+
+## Tech Stack
+
+- **Frontend**: React, TypeScript, Tailwind CSS
+- **Build Tool**: Vite
+- **Version Control**: Git + GitHub
+
+## Folder Structure
+
+explore-africa/
+├── public/ # Static assets
+├── src/
+│ ├── assets/ # Images and media
+│ ├── components/ # Reusable UI components
+│ ├── App.tsx # Root app component
+│ ├── main.tsx # Entry point
+│ └── index.css # Tailwind base styles
+├── tailwind.config.js # Tailwind config
+├── package.json # Project metadata and dependencies
+└── README.md # Project documentation
+
+## Getting Started
+
+### Prerequisites
+
+Make sure you have the following installed:
+
+- [Node.js](https://nodejs.org/) (v18 or later)
+- [Git](https://git-scm.com/)
+
+### Installation
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/MohanAre8/explore-africa.git
+cd explore-africa
+
+2.	Install dependencies:
+  npm install
+
+3.	Run the development server:
+  npm run dev
+
+Your application should now be running at http://localhost:##
+```
+
+Contributing
+
+We use a branch-protected workflow. To contribute: 1. Create a new branch:
+git checkout -b feature/my-feature-name 2. Make your changes and commit:
+git add .
+git commit -m "Describe your change" 3. Push your branch:
+git push origin feature/my-feature-name 4. Create a Pull Request (PR) from GitHub. Only after review and approval will changes be merged into main.
+
+```
+
+```
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
