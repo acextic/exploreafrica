@@ -1,36 +1,31 @@
-import { FaBell, FaUser } from "react-icons/fa";
+import { Bell, User } from "lucide-react";
 
-function Header() {
+const Header = () => {
   return (
-    <header className="w-full bg-white shadow-sm px-4 py-3 sticky top-0 z-50">
-      <div className="flex justify-between items-center w-full">
-        {/* Left - Logo */}
-        <div className="flex items-center space-x-2">
-          <img src="/vite.svg" alt="Logo" className="h-8 w-8" />
-          <h1 className="text-xl font-bold italic">ExploreAfrica</h1>
+    <header className="bg-white border-b shadow-sm px-6 py-4">
+      <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <img src="/vite.svg" alt="Logo" className="h-6 w-6" />
+          <span className="font-bold text-xl">ExploreAfrica</span>
         </div>
-
-        {/* Center - Nav */}
-        <nav className="flex space-x-6">
-          <a href="#" className="text-orange-500 font-medium">
+        <nav className="flex items-center gap-6 text-sm font-medium">
+          <a href="#" className="text-orange-500 underline">
             Home
           </a>
           <a href="#">Country</a>
           <a href="#">Explore Places</a>
           <a href="#">Tours</a>
         </nav>
-
-        {/* Right - Buttons & Icons */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
           <button className="border px-3 py-1 rounded">Things to do</button>
           <button className="border px-3 py-1 rounded">Trip Planner</button>
           <button className="border px-3 py-1 rounded">Sign in</button>
-          <FaBell className="text-xl" />
-          <FaUser className="text-xl" />
+          <Bell className="h-5 w-5" />
+          <User className="h-5 w-5" />
         </div>
       </div>
     </header>
   );
-}
+};
 
 export default Header;
