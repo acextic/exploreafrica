@@ -33,3 +33,6 @@ coverage
 # Local env files
 .env
 .env.*
+
+# local dev mocks
+src/mock/

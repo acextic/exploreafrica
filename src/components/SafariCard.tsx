@@ -18,7 +18,7 @@ const SafariCard: React.FC<SafariCardProps> = ({
   reviews,
 }) => {
   return (
-    <div className="bg-white rounded-2xl overflow-hidden shadow-md w-full max-w-sm">
+    <div className="bg-white rounded-2xl overflow-hidden shadow hover:shadow-lg transition">
       <img src={imageUrl} alt={name} className="w-full h-48 object-cover" />
       <div className="p-4">
         <h3 className="text-lg font-semibold text-gray-800">{name}</h3>
