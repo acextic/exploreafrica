@@ -24,7 +24,7 @@ const SafariCard: React.FC<SafariCardProps> = ({
         <h3 className="text-lg font-semibold text-gray-800">{name}</h3>
         <p className="text-sm text-gray-600">{location}</p>
         <div className="flex items-center text-sm mt-2 text-yellow-600">
-          ⭐ {rating}{" "}
+          ⭐ {rating}
           <span className="ml-1 text-gray-500">({reviews} reviews)</span>
         </div>
         <p className="text-sm text-gray-800 mt-1">{price}</p>
