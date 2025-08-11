@@ -7,6 +7,7 @@ interface SafariCardProps {
   imageUrl: string;
   price: string;
   reviews: number;
+  onClick?: () => void;
 }
 
 const SafariCard: React.FC<SafariCardProps> = ({
@@ -16,9 +17,15 @@ const SafariCard: React.FC<SafariCardProps> = ({
   imageUrl,
   price,
   reviews,
+  onClick,
 }) => {
   return (
-    <div className="bg-white rounded-2xl overflow-hidden shadow hover:shadow-lg transition">
+    <div
+      className="bg-white rounded-2xl overflow-hidden shadow hover:shadow-lg transition cursor-pointer"
+      onClick={onClick}
+      tabIndex={0}
+      role="button"
+    >
       <img src={imageUrl} alt={name} className="w-full h-48 object-cover" />
       <div className="p-4">
         <h3 className="text-lg font-semibold text-gray-800">{name}</h3>
