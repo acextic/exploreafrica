@@ -6,7 +6,7 @@ const FinalBanner = () => {
       <img
         src="/src/assets/giraffe-banner.jpg"
         alt="African Wilderness"
-        className="w-full h-80 object-cover rounded-xl"
+        className="w-full h-80 md:h-[400px] object-cover"
       />
 
       <div className="absolute top-6 left-6 md:top-10 md:left-10 bg-orange-400 bg-opacity-90 text-white p-6 rounded-xl shadow-lg max-w-sm">

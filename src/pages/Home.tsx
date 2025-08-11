@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Hero from "../components/home/Hero";
-import StartJourney from "../components/home/StartJourney";
+import EnhancedSearch from "../components/home/EnhancedSearch";
 import SafariCard from "../components/SafariCard";
 import WhyExplore from "../components/home/WhyExplore";
 import ExploreByCategory from "../components/home/ExploreByCategory";
@@ -26,6 +27,7 @@ type SafariCamp = {
 const Home = () => {
   const [safariCamps, setSafariCamps] = useState<SafariCamp[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchCamps = async () => {
@@ -54,44 +56,45 @@ const Home = () => {
   }, []);
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <>
       <Hero />
-      <StartJourney />
-
-      {/* Popular Safari Camps */}
-      <section className="mt-10 px-4">
-        <h2 className="text-2xl font-bold mb-4">Popular Safari Camps</h2>
-
-        {loading ? (
-          <p>Loading...</p>
-        ) : safariCamps.length === 0 ? (
-          <p>No camps available yet.</p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-            {safariCamps.map((camp) => (
-              <SafariCard
-                key={camp.accommodation_id}
-                name={camp.name}
-                location={camp.address}
-                price={`$${camp.price_per_night}/night`}
-                rating={camp.rating_avg}
-                reviews={camp.rating_count}
-                imageUrl={camp.accommodation_images?.[0]?.url || fallbackImage}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Why Explore Africa */}
-      <section className="mt-16 px-4">
-        <h2 className="text-2xl font-bold mb-4">Reasons to Explore</h2>
-        <WhyExplore items={whyExploreItems} />
-      </section>
-
-      <ExploreByCategory />
+      <div className="w-full py-10 px-8 space-y-12">
+        <EnhancedSearch />
+        <section>
+          <h2 className="text-2xl font-bold mb-4">Popular Safari Camps</h2>
+          {loading ? (
+            <p>Loading...</p>
+          ) : safariCamps.length === 0 ? (
+            <p>No camps available yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+              {safariCamps.map((camp) => (
+                <SafariCard
+                  key={camp.accommodation_id}
+                  name={camp.name}
+                  location={camp.address}
+                  price={`$${camp.price_per_night}/night`}
+                  rating={camp.rating_avg}
+                  reviews={camp.rating_count}
+                  imageUrl={
+                    camp.accommodation_images?.[0]?.url || fallbackImage
+                  }
+                  onClick={() =>
+                    navigate(`/accommodation/${camp.accommodation_id}`)
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </section>
+        <section>
+          <h2 className="text-2xl font-bold mb-4">Reasons to Explore</h2>
+          <WhyExplore items={whyExploreItems} />
+        </section>
+        <ExploreByCategory />
+      </div>
       <FinalBanner />
-    </div>
+    </>
   );
 };
 

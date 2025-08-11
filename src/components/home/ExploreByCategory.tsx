@@ -3,7 +3,7 @@ import { exploreCategories } from "../../mock/exploreCategories";
 
 const ExploreByCategory = () => {
   return (
-    <section className="py-10 px-4 max-w-7xl mx-auto">
+    <section>
       <h2 className="text-2xl md:text-3xl font-semibold mb-6">
         Explore by Category
       </h2>
