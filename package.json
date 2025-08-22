@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5173",
+    "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -12,6 +12,8 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.50.3",
     "date-fns": "^4.1.0",
+    "framer-motion": "^12.23.12",
+    "libphonenumber-js": "^1.12.12",
     "lucide": "^0.515.0",
     "lucide-react": "^0.515.0",
     "react": "^19.1.0",

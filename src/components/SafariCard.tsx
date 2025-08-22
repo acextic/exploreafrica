@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 interface SafariCardProps {
   name: string;
@@ -10,6 +10,8 @@ interface SafariCardProps {
   onClick?: () => void;
 }
 
+const FALLBACK = "https://source.unsplash.com/featured/?safari,camp";
+
 const SafariCard: React.FC<SafariCardProps> = ({
   name,
   rating,
@@ -19,6 +21,8 @@ const SafariCard: React.FC<SafariCardProps> = ({
   reviews,
   onClick,
 }) => {
+  const [src, setSrc] = useState(imageUrl || FALLBACK);
+
   return (
     <div
       className="bg-white rounded-2xl overflow-hidden shadow hover:shadow-lg transition cursor-pointer"
@@ -26,7 +30,15 @@ const SafariCard: React.FC<SafariCardProps> = ({
       tabIndex={0}
       role="button"
     >
-      <img src={imageUrl} alt={name} className="w-full h-48 object-cover" />
+      <img
+        src={src}
+        alt={name}
+        className="w-full h-48 object-cover"
+        loading="lazy"
+        onError={() => {
+          if (src !== FALLBACK) setSrc(FALLBACK);
+        }}
+      />
       <div className="p-4">
         <h3 className="text-lg font-semibold text-gray-800">{name}</h3>
         <p className="text-sm text-gray-600">{location}</p>
