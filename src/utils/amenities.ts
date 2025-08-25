@@ -16,9 +16,7 @@ export function formatAmenityKey(key: string): string {
 
 export function normalizeAmenities(raw: unknown): string[] {
   if (!raw) return [];
-  if (Array.isArray(raw)) {
-    return raw.map(String).filter(Boolean);
-  }
+  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
   if (typeof raw === "object") {
     return Object.entries(raw as Record<string, any>)
       .filter(([, v]) => v === true || v === "true")

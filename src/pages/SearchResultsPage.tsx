@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import SafariCard from "../components/SafariCard";
 import EnhancedSearch from "../components/home/EnhancedSearch";
 import { primaryImageUrl } from "../utils/images";
+import { DEFAULT_AMENITIES_ORDER, formatAmenityKey } from "../utils/amenities";
 
 const fallbackImage = "https://source.unsplash.com/featured/?safari,camp";
 
@@ -17,22 +18,9 @@ type ResultRow = {
   price_per_night: number;
   rating_avg: number | null;
   rating_count: number | null;
-  amenities: AmenityFlags | null; // <-- include amenities for counts/disable
+  amenities: AmenityFlags | null;
   accommodation_images: { image_id: number | null; url: string | null }[];
 };
-
-const AMENITIES_ALL = [
-  "wifi",
-  "pool",
-  "spa",
-  "bar",
-  "restaurant",
-  "game_drives",
-  "conference",
-  "airstrip",
-  "crater_views",
-] as const;
-type AmenityKey = (typeof AMENITIES_ALL)[number];
 
 const TYPES_ALL = ["lodge", "tent", "hotel"] as const;
 type TypeKey = (typeof TYPES_ALL)[number];
@@ -50,7 +38,7 @@ export default function SearchResultsPage() {
   const params = useMemo(() => new URLSearchParams(search), [search]);
   const navigate = useNavigate();
 
-  // ------- URL -> state -------
+  // ---------- URL → state ----------
   const whereRaw =
     (
       params.get("where") ||
@@ -61,12 +49,12 @@ export default function SearchResultsPage() {
       ""
     ).trim() || "";
 
-  const typeFilter = (params.get("type") || "").trim(); // lodge | tent | hotel | ""
+  const typeFilter = (params.get("type") || "").trim();
   const minPrice = params.get("minPrice");
   const maxPrice = params.get("maxPrice");
   const amenityList = parseList(params.get("amenities")).filter((a) =>
-    AMENITIES_ALL.includes(a as AmenityKey)
-  ) as AmenityKey[];
+    /^[a-z0-9_]+$/i.test(a)
+  );
 
   const startDate = params.get("startDate") || "";
   const endDate = params.get("endDate") || "";
@@ -74,36 +62,69 @@ export default function SearchResultsPage() {
   const children = parseInt(params.get("children") || "0", 10);
   const rooms = parseInt(params.get("rooms") || "1", 10);
 
-  // ------- results -------
+  // ---------- results ----------
   const [results, setResults] = useState<ResultRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // ------- local UI state for filters (mirrors URL) -------
+  const { KNOWN_AMENITIES, EXTRA_AMENITIES, ALL_AMENITIES } = useMemo(() => {
+    const fromResults = new Set<string>();
+    for (const r of results) {
+      const flags = (r.amenities || {}) as Record<string, any>;
+      for (const [k, v] of Object.entries(flags)) {
+        if (v === true || v === "true") fromResults.add(k);
+      }
+    }
+    const known = DEFAULT_AMENITIES_ORDER.filter((k) => fromResults.has(k));
+    const extras = Array.from(fromResults).filter(
+      (k) => !DEFAULT_AMENITIES_ORDER.includes(k)
+    );
+    extras.sort();
+    const all =
+      known.length || extras.length
+        ? [...known, ...extras]
+        : [...DEFAULT_AMENITIES_ORDER];
+    return {
+      KNOWN_AMENITIES: known.length ? known : [...DEFAULT_AMENITIES_ORDER],
+      EXTRA_AMENITIES: extras,
+      ALL_AMENITIES: all,
+    };
+  }, [results]);
+
   const [uiType, setUiType] = useState(typeFilter);
   const [uiMin, setUiMin] = useState(minPrice || "");
   const [uiMax, setUiMax] = useState(maxPrice || "");
-  const [uiAmenities, setUiAmenities] = useState<Record<AmenityKey, boolean>>(
-    AMENITIES_ALL.reduce((acc, k) => {
-      acc[k] = amenityList.includes(k);
-      return acc;
-    }, {} as Record<AmenityKey, boolean>)
+  const [uiAmenities, setUiAmenities] = useState<Record<string, boolean>>({});
+
+  const [amenitiesOpen, setAmenitiesOpen] = useState(true);
+
+  const selectedAmenityCount = useMemo(
+    () => Object.values(uiAmenities).filter(Boolean).length,
+    [uiAmenities]
   );
 
-  // keep local UI in sync when back/forward pressed
   useEffect(() => {
+    setUiAmenities((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const k of ALL_AMENITIES) {
+        next[k] = amenityList.includes(k) || prev[k] === true;
+      }
+      return next;
+    });
+  }, [ALL_AMENITIES.join("|"), amenityList.join("|")]);
+
+  const syncingRef = useRef(false);
+  useEffect(() => {
+    syncingRef.current = true;
     setUiType(typeFilter);
     setUiMin(minPrice || "");
     setUiMax(maxPrice || "");
-    setUiAmenities(
-      AMENITIES_ALL.reduce((acc, k) => {
-        acc[k] = amenityList.includes(k);
-        return acc;
-      }, {} as Record<AmenityKey, boolean>)
-    );
+    const t = setTimeout(() => {
+      syncingRef.current = false;
+    }, 0);
+    return () => clearTimeout(t);
   }, [typeFilter, minPrice, maxPrice, amenityList.join("|")]);
 
-  // ------- fetch -------
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -124,7 +145,6 @@ export default function SearchResultsPage() {
         `
       );
 
-      // sort images
       q = q.order("image_id", {
         foreignTable: "accommodation_images",
         ascending: true,
@@ -148,11 +168,9 @@ export default function SearchResultsPage() {
       }
 
       // type filter
-      if (typeFilter) {
-        q = q.eq("accommodation_type", typeFilter);
-      }
+      if (typeFilter) q = q.eq("accommodation_type", typeFilter);
 
-      // price filters (from URL)
+      // price filters
       const min = Number(minPrice);
       const max = Number(maxPrice);
       if (!Number.isNaN(min) && min > 0) q = q.gte("price_per_night", min);
@@ -180,15 +198,13 @@ export default function SearchResultsPage() {
     return () => {
       cancelled = true;
     };
-    // re-run whenever URL changes
   }, [whereRaw, typeFilter, minPrice, maxPrice, amenityList.join(","), search]);
 
-  // ------- availability for disabling options (based on current results) -------
   const { typeCounts, amenityCounts } = useMemo(() => {
     const tCounts: Record<string, number> = {};
-    const aCounts: Record<AmenityKey, number> = AMENITIES_ALL.reduce(
-      (acc, k) => ({ ...acc, [k]: 0 }),
-      {} as Record<AmenityKey, number>
+    const aCounts: Record<string, number> = ALL_AMENITIES.reduce(
+      (acc, k) => ((acc[k] = 0), acc),
+      {} as Record<string, number>
     );
 
     for (const r of results) {
@@ -196,19 +212,17 @@ export default function SearchResultsPage() {
         const key = r.accommodation_type.toLowerCase();
         tCounts[key] = (tCounts[key] || 0) + 1;
       }
-      const flags = r.amenities || {};
-      for (const k of AMENITIES_ALL) {
-        if (flags[k] === true) aCounts[k] += 1;
+      const flags = (r.amenities || {}) as Record<string, any>;
+      for (const k of ALL_AMENITIES) {
+        if (flags[k] === true || flags[k] === "true") aCounts[k] += 1;
       }
     }
     return { typeCounts: tCounts, amenityCounts: aCounts };
-  }, [results]);
+  }, [results, ALL_AMENITIES]);
 
-  // ------- build & navigate with filters -------
-  function applyFilters() {
-    const newParams = new URLSearchParams(search);
+  function buildParamsFromUI(base: URLSearchParams) {
+    const newParams = new URLSearchParams(base);
 
-    // keep existing search context (where/dates/occupancy), only mutate filters
     if (uiType) newParams.set("type", uiType);
     else newParams.delete("type");
 
@@ -218,24 +232,55 @@ export default function SearchResultsPage() {
     if (uiMax) newParams.set("maxPrice", uiMax);
     else newParams.delete("maxPrice");
 
-    const selectedAmenities = AMENITIES_ALL.filter((k) => uiAmenities[k]);
+    const selectedAmenities = Object.keys(uiAmenities).filter(
+      (k) => uiAmenities[k]
+    );
     if (selectedAmenities.length) {
       newParams.set("amenities", selectedAmenities.join(","));
     } else {
       newParams.delete("amenities");
     }
 
-    navigate(`/search?${newParams.toString()}`);
+    return newParams;
+  }
+
+  function applyFilters(pushHistory = false) {
+    const newParams = buildParamsFromUI(new URLSearchParams(search));
+    navigate(`/search?${newParams.toString()}`, { replace: !pushHistory });
   }
 
   function clearFilters() {
+    setUiType("");
+    setUiMin("");
+    setUiMax("");
+    setUiAmenities({});
     const newParams = new URLSearchParams(search);
     newParams.delete("type");
     newParams.delete("minPrice");
     newParams.delete("maxPrice");
     newParams.delete("amenities");
-    navigate(`/search?${newParams.toString()}`);
+    navigate(`/search?${newParams.toString()}`, { replace: true });
   }
+
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readyRef = useRef(false);
+
+  useEffect(() => {
+    if (!readyRef.current) {
+      readyRef.current = true;
+      return;
+    }
+    if (syncingRef.current) return;
+
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      applyFilters(false);
+    }, 500);
+
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, [uiType, uiMin, uiMax, JSON.stringify(uiAmenities)]);
 
   return (
     <main className="flex flex-col w-full min-h-screen pt-6 bg-gray-50">
@@ -246,99 +291,199 @@ export default function SearchResultsPage() {
       <div className="flex w-full px-8 gap-5">
         {/* Sidebar Filters */}
         <aside className="hidden md:block md:w-1/5 lg:w-1/6 sticky top-16 h-fit">
-          <div className="bg-white rounded-xl shadow p-3">
-            <div className="flex items-center justify-between mb-3">
+          <div className="bg-white rounded-xl shadow">
+            <div className="sticky top-16 z-10 bg-white border-b px-3 pt-3 pb-2 flex items-center justify-between rounded-t-xl">
               <h2 className="text-base font-semibold">Filters</h2>
-              <button
-                onClick={clearFilters}
-                className="text-xs text-gray-600 underline"
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-gray-600 underline"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => applyFilters(true)}
+                  className="bg-orange-500 hover:bg-orange-600 text-white rounded px-3 py-1 text-xs"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3">
+              {/* Type */}
+              <label className="block mb-2 text-sm font-medium">Type</label>
+              <select
+                value={uiType}
+                onChange={(e) => setUiType(e.target.value)}
+                className="w-full border rounded p-2 text-sm mb-4"
               >
-                Clear
-              </button>
+                <option value="">All</option>
+                {TYPES_ALL.map((t) => (
+                  <option key={t} value={t} disabled={!typeCounts[t]}>
+                    {t.charAt(0).toUpperCase() + t.slice(1)}{" "}
+                    {typeCounts[t] ? `(${typeCounts[t]})` : ""}
+                  </option>
+                ))}
+              </select>
+
+              {/* Price */}
+              <label className="block mb-2 text-sm font-medium">
+                Price / night
+              </label>
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="Min"
+                  className="w-full border rounded p-2 text-sm"
+                  value={uiMin}
+                  onChange={(e) => setUiMin(e.target.value)}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="Max"
+                  className="w-full border rounded p-2 text-sm"
+                  value={uiMax}
+                  onChange={(e) => setUiMax(e.target.value)}
+                />
+              </div>
+
+              {/* Amenities (collapsible) */}
+              <section className="border-t pt-3 mt-3">
+                <button
+                  type="button"
+                  onClick={() => setAmenitiesOpen((s) => !s)}
+                  className="w-full flex items-center justify-between text-left"
+                  aria-expanded={amenitiesOpen}
+                >
+                  <span className="text-sm font-medium">Amenities</span>
+                  <span className="flex items-center gap-2">
+                    {selectedAmenityCount > 0 && (
+                      <span className="px-2 py-0.5 text-xs rounded bg-gray-100">
+                        {selectedAmenityCount} selected
+                      </span>
+                    )}
+                    <svg
+                      className={`w-4 h-4 transition-transform ${
+                        amenitiesOpen ? "rotate-180" : ""
+                      }`}
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 011.08 1.04l-4.25 4.25a.75.75 0 01-1.06 0L5.21 8.27a.75.75 0 01.02-1.06z" />
+                    </svg>
+                  </span>
+                </button>
+
+                {amenitiesOpen && (
+                  <div className="mt-3 space-y-3">
+                    {/* Popular dropdown */}
+                    <details className="group" open>
+                      <summary className="flex items-center justify-between cursor-pointer list-none">
+                        <span className="text-xs font-medium text-gray-700">
+                          Popular
+                        </span>
+                        <svg
+                          className="w-4 h-4 transition-transform group-open:rotate-180"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                        >
+                          <path d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 011.08 1.04l-4.25 4.25a.75.75 0 01-1.06 0L5.21 8.27a.75.75 0 01.02-1.06z" />
+                        </svg>
+                      </summary>
+                      <div className="mt-2 flex flex-col gap-1 text-sm">
+                        {KNOWN_AMENITIES.map((k) => {
+                          const disabled = amenityCounts[k] === 0;
+                          return (
+                            <label
+                              key={`popular-${k}`}
+                              className={`flex items-center gap-2 ${
+                                disabled ? "opacity-40" : ""
+                              }`}
+                              title={
+                                disabled ? "No results with this amenity" : ""
+                              }
+                            >
+                              <input
+                                type="checkbox"
+                                checked={!!uiAmenities[k]}
+                                disabled={disabled}
+                                onChange={(e) =>
+                                  setUiAmenities((prev) => ({
+                                    ...prev,
+                                    [k]: e.target.checked,
+                                  }))
+                                }
+                              />
+                              <span className="capitalize">
+                                {formatAmenityKey(k)}{" "}
+                                {amenityCounts[k]
+                                  ? `(${amenityCounts[k]})`
+                                  : ""}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </details>
+
+                    {/* More dropdown */}
+                    {EXTRA_AMENITIES.length > 0 && (
+                      <details className="group">
+                        <summary className="flex items-center justify-between cursor-pointer list-none">
+                          <span className="text-xs font-medium text-gray-700">
+                            More
+                          </span>
+                          <svg
+                            className="w-4 h-4 transition-transform group-open:rotate-180"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 011.08 1.04l-4.25 4.25a.75.75 0 01-1.06 0L5.21 8.27a.75.75 0 01.02-1.06z" />
+                          </svg>
+                        </summary>
+                        <div className="mt-2 flex flex-col gap-1 text-sm">
+                          {EXTRA_AMENITIES.map((k) => {
+                            const disabled = amenityCounts[k] === 0;
+                            return (
+                              <label
+                                key={`extra-${k}`}
+                                className={`flex items-center gap-2 ${
+                                  disabled ? "opacity-40" : ""
+                                }`}
+                                title={
+                                  disabled ? "No results with this amenity" : ""
+                                }
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={!!uiAmenities[k]}
+                                  disabled={disabled}
+                                  onChange={(e) =>
+                                    setUiAmenities((prev) => ({
+                                      ...prev,
+                                      [k]: e.target.checked,
+                                    }))
+                                  }
+                                />
+                                <span className="capitalize">
+                                  {formatAmenityKey(k)}{" "}
+                                  {amenityCounts[k]
+                                    ? `(${amenityCounts[k]})`
+                                    : ""}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+              </section>
             </div>
-
-            {/* Type */}
-            <label className="block mb-2 text-sm font-medium">Type</label>
-            <select
-              value={uiType}
-              onChange={(e) => setUiType(e.target.value)}
-              className="w-full border rounded p-2 text-sm mb-4"
-            >
-              <option value="">All</option>
-              {TYPES_ALL.map((t) => (
-                <option key={t} value={t} disabled={!typeCounts[t]}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}{" "}
-                  {typeCounts[t] ? `(${typeCounts[t]})` : ""}
-                </option>
-              ))}
-            </select>
-
-            {/* Price */}
-            <label className="block mb-2 text-sm font-medium">
-              Price / night
-            </label>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <input
-                type="number"
-                min={0}
-                placeholder="Min"
-                className="w-full border rounded p-2 text-sm"
-                value={uiMin}
-                onChange={(e) => setUiMin(e.target.value)}
-              />
-              <input
-                type="number"
-                min={0}
-                placeholder="Max"
-                className="w-full border rounded p-2 text-sm"
-                value={uiMax}
-                onChange={(e) => setUiMax(e.target.value)}
-              />
-            </div>
-
-            {/* Amenities */}
-            <label className="block mb-2 text-sm font-medium">Amenities</label>
-            <div className="flex flex-col gap-1 mb-4 text-sm">
-              {AMENITIES_ALL.map((k) => {
-                const disabled = amenityCounts[k] === 0;
-                return (
-                  <label
-                    key={k}
-                    className={`flex items-center gap-2 ${
-                      disabled ? "opacity-40" : ""
-                    }`}
-                    title={
-                      disabled
-                        ? "No results with this amenity in current search"
-                        : ""
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      checked={uiAmenities[k]}
-                      disabled={disabled}
-                      onChange={(e) =>
-                        setUiAmenities((prev) => ({
-                          ...prev,
-                          [k]: e.target.checked,
-                        }))
-                      }
-                    />
-                    <span className="capitalize">
-                      {k.replaceAll("_", " ")}{" "}
-                      {amenityCounts[k] ? `(${amenityCounts[k]})` : ""}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-
-            <button
-              onClick={applyFilters}
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded px-4 py-2 text-sm"
-            >
-              Apply filters
-            </button>
           </div>
         </aside>
 
@@ -357,7 +502,7 @@ export default function SearchResultsPage() {
               {rooms} room(s)
             </p>
 
-            {/* Active filter chips */}
+            {/* Active chips */}
             <div className="mt-2 flex flex-wrap gap-2 text-xs">
               {typeFilter ? (
                 <span className="px-2 py-1 bg-gray-100 rounded">
@@ -379,7 +524,7 @@ export default function SearchResultsPage() {
                   key={a}
                   className="px-2 py-1 bg-gray-100 rounded capitalize"
                 >
-                  {a.replaceAll("_", " ")}
+                  {formatAmenityKey(a)}
                 </span>
               ))}
             </div>

@@ -9,6 +9,7 @@ import MapBlock from "../components/common/MapBlock";
 import RoomTypePanel from "../components/booking/RoomTypesPanel";
 import Breadcrumbs from "../components/common/Breadcrumbs";
 import type { RoomType } from "../components/booking/RoomTypesPanel";
+import { formatAmenityKey, normalizeAmenities } from "../utils/amenities";
 
 type Row = {
   accommodation_id: number;
@@ -17,7 +18,6 @@ type Row = {
   price_per_night: number;
   rating_avg: number | null;
   rating_count: number | null;
-  // DB has JSONB; we’ll normalize at runtime
   amenities: unknown | null;
   latitude: number | null;
   longitude: number | null;
@@ -196,19 +196,10 @@ export default function AccommodationDetail() {
     () => primaryImageUrl(data?.accommodation_images || [], FALLBACK),
     [data]
   );
-
-  // Normalize amenities from JSONB → string[]
-  const amenityList = useMemo(() => {
-    const a = data?.amenities;
-    if (!a) return [];
-    if (Array.isArray(a)) return a.filter(Boolean).map(String);
-    if (typeof a === "object") {
-      return Object.entries(a as Record<string, any>)
-        .filter(([, v]) => v === true)
-        .map(([k]) => k.replace(/_/g, " "));
-    }
-    return [];
-  }, [data]);
+  const amenityKeys = useMemo(
+    () => normalizeAmenities(data?.amenities),
+    [data]
+  );
 
   const mockRooms: RoomType[] = useMemo(() => {
     if (!data) return [];
@@ -327,16 +318,17 @@ export default function AccommodationDetail() {
             </p>
           </div>
 
+          {/* Amenities */}
           <div className="bg-white rounded-xl shadow p-5">
             <h2 className="text-xl font-semibold mb-2">Amenities</h2>
-            {amenityList.length ? (
+            {amenityKeys.length ? (
               <div className="flex flex-wrap gap-2">
-                {amenityList.map((a, i) => (
+                {amenityKeys.map((k) => (
                   <span
-                    key={i}
+                    key={k}
                     className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm"
                   >
-                    {a}
+                    {formatAmenityKey(k)}
                   </span>
                 ))}
               </div>
@@ -378,10 +370,7 @@ export default function AccommodationDetail() {
                 onClick={() => {
                   const params = new URLSearchParams();
                   params.set("similarTo", String(data.accommodation_id));
-                  // helpful context for the search page, but optional
-                  if (data.accommodation_type) {
-                    params.set("type", data.accommodation_type);
-                  }
+
                   if (countryName) params.set("country", countryName);
                   if (destName) params.set("destination", destName);
                   navigate(`/search?${params.toString()}`);

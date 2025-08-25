@@ -1,4 +1,3 @@
-// src/components/booking/SimilarStays.tsx
 import React from "react";
 
 type Item = {

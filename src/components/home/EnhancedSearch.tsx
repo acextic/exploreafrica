@@ -50,14 +50,12 @@ export default function EnhancedSearch({
   const [children, setChildren] = useState(initChildren);
   const [rooms, setRooms] = useState(initRooms);
 
-  // keep minDate to "today"
   useEffect(() => {
     if (dateRange[0].startDate! < today()) {
       setDateRange([{ ...dateRange[0], startDate: today() }]);
     }
-  }, []); // run once
+  }, []);
 
-  // address suggestions
   useEffect(() => {
     let active = true;
     (async () => {
@@ -84,7 +82,6 @@ export default function EnhancedSearch({
     };
   }, [location]);
 
-  // Build next URL, preserving any existing filters (type/price/amenities etc.)
   const handleSearch = () => {
     const next = new URLSearchParams(params.toString());
 
@@ -96,9 +93,6 @@ export default function EnhancedSearch({
     next.set("adults", String(adults));
     next.set("children", String(children));
     next.set("rooms", String(rooms));
-
-    // We purposely DO NOT touch: type, minPrice, maxPrice, amenities
-    // so they remain applied when a user refines their search here.
 
     window.location.href = `/search?${next.toString()}`;
   };
@@ -171,7 +165,6 @@ export default function EnhancedSearch({
                     if (item.selection?.startDate && item.selection?.endDate) {
                       const s = new Date(item.selection.startDate);
                       const e = new Date(item.selection.endDate);
-                      // guard: no past dates, end > start
                       const min = today();
                       if (s < min) s.setTime(min.getTime());
                       if (e <= s) {

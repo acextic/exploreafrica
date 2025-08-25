@@ -1,4 +1,3 @@
-// src/components/booking/RoomTypesPanel.tsx
 import React from "react";
 
 export type RoomType = {

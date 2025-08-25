@@ -17,7 +17,6 @@ type Props = {
   children: number;
   rooms?: number;
 
-  /** Optional capacity per room (adults+children). If provided, total guests may not exceed rooms * maxCapacity */
   maxCapacity?: number;
 
   nights: number;
