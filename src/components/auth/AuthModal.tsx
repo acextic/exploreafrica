@@ -1,44 +1,63 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import {
+  getAllCountries,
+  getCountryByCode,
+  formatAsYouType,
+  isValidE164,
+  DEFAULT_COUNTRY,
+} from "../../constants/countries";
+import type { CountryOption } from "../../constants/countries";
 
-type Props = {
-  open: boolean;
-  onClose: () => void;
-  defaultTab?: "signin" | "signup";
-};
-
+type Props = { open: boolean; onClose: () => void };
 type Phase = "request" | "verify";
 
-const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
+function normEmail(x: string) {
+  return x.trim().toLowerCase();
+}
+
+function onlyDigits(x: string) {
+  return x.replace(/\D/g, "");
+}
+
+function e164From(country: CountryOption, formattedPhone: string) {
+  const dialDigits = onlyDigits(country.dial);
+  const all = onlyDigits(formattedPhone);
+  const tail = all.startsWith(dialDigits) ? all.slice(dialDigits.length) : all;
+  return `+${dialDigits}${tail}`;
+}
+
+export default function AuthModal({ open, onClose }: Props) {
+  const countries = useMemo(() => getAllCountries(), []);
+  const defaultCountry = useMemo(() => getCountryByCode(DEFAULT_COUNTRY), []);
   const [activeTab, setActiveTab] = useState<"signin" | "signup">("signin");
 
-  // ---- Sign in state ----
   const [siEmail, setSiEmail] = useState("");
   const [siPhase, setSiPhase] = useState<Phase>("request");
   const [siLoading, setSiLoading] = useState(false);
   const [siCode, setSiCode] = useState("");
   const [siError, setSiError] = useState<string | null>(null);
-  const userNotFound = useMemo(
-    () =>
-      (siError || "").toLowerCase().includes("no account") ||
-      (siError || "").toLowerCase().includes("not found"),
-    [siError]
-  );
 
-  // ---- Sign up state ----
   const [suPhase, setSuPhase] = useState<Phase>("request");
   const [suLoading, setSuLoading] = useState(false);
   const [suCode, setSuCode] = useState("");
   const [suError, setSuError] = useState<string | null>(null);
-  const [emailTaken, setEmailTaken] = useState(false);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [suEmail, setSuEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [country, setCountry] = useState("");
 
-  // Close on ESC
+  const [country, setCountry] = useState<CountryOption>(defaultCountry);
+  const [phone, setPhone] = useState<string>(
+    formatAsYouType(defaultCountry.code, defaultCountry.dial + " ")
+  );
+
+  const phoneE164 = useMemo(() => e164From(country, phone), [country, phone]);
+  const phoneValid = useMemo(
+    () => isValidE164(country.code, phoneE164),
+    [country, phoneE164]
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!open) return;
@@ -48,54 +67,43 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Reset state when modal opens
   useEffect(() => {
-    if (open) {
-      setActiveTab(defaultTab);
-      setActiveTab("signin");
+    if (!open) return;
+    setActiveTab("signin");
 
-      setSiEmail("");
-      setSiPhase("request");
-      setSiLoading(false);
-      setSiCode("");
-      setSiError(null);
+    setSiEmail("");
+    setSiPhase("request");
+    setSiLoading(false);
+    setSiCode("");
+    setSiError(null);
 
-      setSuPhase("request");
-      setSuLoading(false);
-      setSuCode("");
-      setSuError(null);
-      setEmailTaken(false);
-      setFirstName("");
-      setLastName("");
-      setSuEmail("");
-      setPhone("");
-      setCountry("");
-    }
-  }, [open, defaultTab]);
+    setSuPhase("request");
+    setSuLoading(false);
+    setSuCode("");
+    setSuError(null);
+    setFirstName("");
+    setLastName("");
+    setSuEmail("");
 
-  if (!open) return null;
+    const c = getCountryByCode(DEFAULT_COUNTRY);
+    setCountry(c);
+    setPhone(formatAsYouType(c.code, c.dial + " "));
+  }, [open]);
 
-  // ---------- Sign in ----------
   const sendSignInOtp = async () => {
     setSiError(null);
-    const email = siEmail.trim().toLowerCase();
+    const email = normEmail(siEmail);
     if (!email) return;
     setSiLoading(true);
-
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: {
-        shouldCreateUser: false, // prevents creating new users from Sign in
-      },
+      options: { shouldCreateUser: false },
     });
-
     setSiLoading(false);
     if (error) {
-      const msg =
-        error.message.toLowerCase().includes("signups not allowed") ||
-        error.message.toLowerCase().includes("for security reasons")
-          ? "No account found for that email. Please sign up."
-          : error.message;
+      const msg = error.message.toLowerCase().includes("signups not allowed")
+        ? "No account found for that email. Please sign up."
+        : error.message;
       setSiError(msg);
       return;
     }
@@ -109,16 +117,14 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
 
   const verifySignInOtp = async () => {
     setSiError(null);
-    const email = siEmail.trim().toLowerCase();
+    const email = normEmail(siEmail);
     if (!email || siCode.trim().length < 6) return;
     setSiLoading(true);
-
     const { error } = await supabase.auth.verifyOtp({
       email,
       token: siCode.trim(),
       type: "email",
     });
-
     setSiLoading(false);
     if (error) {
       setSiError(error.message);
@@ -127,70 +133,49 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
     onClose();
   };
 
-  // ---------- Sign up ----------
-  // 1) definitive check via RPC (reads auth.users)
-  const isEmailRegistered = async (email: string) => {
-    const e = email.trim().toLowerCase();
-    if (!e) return false;
+  const rpcEmailRegistered = async (email: string) => {
     const { data, error } = await supabase.rpc("email_registered", {
-      p_email: e,
+      p_email: email,
     });
-    if (error) {
-      console.warn("email_registered RPC error:", error.message);
-      return false;
-    }
-    return data === true;
-  };
-
-  // 2) optional soft fallback to your mirror table (non-blocking)
-  const isInMirror = async (email: string) => {
-    const e = email.trim().toLowerCase();
-    if (!e) return false;
-    const { data, error } = await supabase
-      .from("users")
-      .select("user_id")
-      .eq("email", e)
-      .maybeSingle();
     if (error) return false;
-    return !!data;
+    return data === true;
   };
 
   const sendSignUpOtp = async () => {
     setSuError(null);
-    setEmailTaken(false);
-    const email = suEmail.trim().toLowerCase();
-
+    const email = normEmail(suEmail);
     if (!firstName.trim() || !lastName.trim() || !email) {
-      setSuError("Please fill first name, last name, and email.");
+      setSuError("Please fill first name, last name and email.");
       return;
     }
-
+    if (!phoneValid) {
+      setSuError("Please enter a valid phone number for the selected country.");
+      return;
+    }
     setSuLoading(true);
-
-    // Pre-checks to avoid sending an OTP to an already-registered email
-    const exists = await isEmailRegistered(email);
-    const existsMirror = !exists ? await isInMirror(email) : false;
-
-    if (exists || existsMirror) {
+    const exists = await rpcEmailRegistered(email);
+    if (exists) {
       setSuLoading(false);
-      setEmailTaken(true);
+      setSuError("An account with this email already exists. Please sign in.");
       return;
     }
-
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         shouldCreateUser: true,
-        data: { firstName, lastName, phone, country },
+        data: {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          phone: phoneE164,
+          country: country.name,
+        },
       },
     });
-
     setSuLoading(false);
     if (error) {
       setSuError(error.message);
       return;
     }
-
     setSuPhase("verify");
     setTimeout(() => {
       (
@@ -201,50 +186,62 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
 
   const verifySignUpOtp = async () => {
     setSuError(null);
-    const email = suEmail.trim().toLowerCase();
+    const email = normEmail(suEmail);
     if (!email || suCode.trim().length < 6) return;
     setSuLoading(true);
-
     const { error } = await supabase.auth.verifyOtp({
       email,
       token: suCode.trim(),
       type: "email",
     });
-
+    setSuLoading(false);
     if (error) {
-      setSuLoading(false);
       setSuError(error.message);
       return;
     }
-
-    setSuLoading(false);
     onClose();
   };
 
+  const onCountryChange = (code: string) => {
+    const next = getCountryByCode(code);
+    const prev = country;
+    const prevDialDigits = onlyDigits(prev.dial);
+    const all = onlyDigits(phone);
+    const tail = all.startsWith(prevDialDigits)
+      ? all.slice(prevDialDigits.length)
+      : all;
+    const nextRaw = `+${onlyDigits(next.dial)}${tail}`;
+    setCountry(next);
+    setPhone(formatAsYouType(next.code, nextRaw));
+  };
+
+  const onPhoneChange = (v: string) => {
+    const dialDigits = onlyDigits(country.dial);
+    const all = onlyDigits(v);
+    const tail = all.startsWith(dialDigits)
+      ? all.slice(dialDigits.length)
+      : all;
+    const raw = `+${dialDigits}${tail}`;
+    setPhone(formatAsYouType(country.code, raw));
+  };
+
+  if (!open) return null;
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      role="dialog"
-      aria-modal="true"
-    >
-      {/* Overlay */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
         onClick={onClose}
       />
-      {/* Panel */}
       <div className="relative bg-white rounded-2xl shadow-xl w-[92vw] max-w-md p-6">
-        {/* Close */}
         <button
           onClick={onClose}
           className="absolute right-3 top-3 rounded-full w-8 h-8 flex items-center justify-center text-gray-500 hover:bg-gray-100"
           aria-label="Close"
-          title="Close"
         >
           ✕
         </button>
 
-        {/* Tabs */}
         <div className="flex items-center justify-center gap-2 mb-5">
           <button
             onClick={() => setActiveTab("signin")}
@@ -268,7 +265,6 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
           </button>
         </div>
 
-        {/* Content */}
         {activeTab === "signin" ? (
           <div>
             {siPhase === "request" ? (
@@ -293,7 +289,6 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
                 >
                   {siLoading ? "Sending..." : "Send code"}
                 </button>
-
                 <div className="mt-3 text-center text-sm">
                   New here?{" "}
                   <button
@@ -319,6 +314,7 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
                   value={siCode}
                   onChange={(e) => setSiCode(e.target.value)}
                   inputMode="numeric"
+                  autoComplete="one-time-code"
                   maxLength={6}
                 />
                 {siError && (
@@ -338,21 +334,6 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
                 >
                   Resend code
                 </button>
-
-                {userNotFound && (
-                  <p className="text-sm text-gray-600 mt-3 text-center">
-                    No account with that email.{" "}
-                    <button
-                      className="underline text-orange-600"
-                      onClick={() => {
-                        setActiveTab("signup");
-                        setSuEmail(siEmail);
-                      }}
-                    >
-                      Sign up?
-                    </button>
-                  </p>
-                )}
               </>
             )}
           </div>
@@ -404,47 +385,44 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
 
                 <div className="mt-3">
                   <label className="block text-sm font-medium mb-1">
-                    Phone
+                    Country
                   </label>
-                  <input
+                  <select
                     className="w-full border rounded-lg px-3 py-2"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+254 700 000 000"
-                  />
+                    value={country.code}
+                    onChange={(e) => onCountryChange(e.target.value)}
+                  >
+                    {countries.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="mt-3">
                   <label className="block text-sm font-medium mb-1">
-                    Country
+                    Phone
                   </label>
                   <input
-                    className="w-full border rounded-lg px-3 py-2"
-                    value={country}
-                    onChange={(e) => setCountry(e.target.value)}
-                    placeholder="Kenya"
+                    className={`w-full border rounded-lg px-3 py-2 ${
+                      phone && !phoneValid ? "border-red-400" : ""
+                    }`}
+                    value={phone}
+                    onChange={(e) => onPhoneChange(e.target.value)}
+                    placeholder={`${country.dial} 5551234567`}
+                    inputMode="tel"
                   />
                 </div>
 
-                {emailTaken && (
-                  <div className="text-sm bg-yellow-50 border border-yellow-200 rounded p-3 mt-2">
-                    Looks like an account with <strong>{suEmail}</strong>{" "}
-                    already exists.{" "}
-                    <button
-                      className="underline text-orange-600"
-                      onClick={() => {
-                        setActiveTab("signin");
-                        setSiEmail(suEmail);
-                      }}
-                    >
-                      Sign in instead
-                    </button>
-                    .
-                  </div>
-                )}
-
                 {suError && (
                   <p className="text-sm text-red-500 mt-2">{suError}</p>
+                )}
+
+                {!suError && phone && !phoneValid && (
+                  <p className="text-sm text-red-500 mt-2">
+                    Please enter a valid phone number for {country.name}.
+                  </p>
                 )}
 
                 <button
@@ -453,7 +431,8 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
                     suLoading ||
                     !firstName.trim() ||
                     !lastName.trim() ||
-                    !suEmail.trim()
+                    !suEmail.trim() ||
+                    !phoneValid
                   }
                   className="w-full mt-3 bg-orange-500 text-white rounded-lg py-2 hover:bg-orange-600 disabled:opacity-60"
                 >
@@ -473,8 +452,7 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
             ) : (
               <>
                 <p className="text-sm text-gray-700 mb-3">
-                  We emailed a 6-digit code to <strong>{suEmail}</strong>. Enter
-                  it below to finish creating your account.
+                  We emailed a 6-digit code to <strong>{suEmail}</strong>.
                 </p>
                 <input
                   id="signup-code"
@@ -483,12 +461,12 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
                   value={suCode}
                   onChange={(e) => setSuCode(e.target.value)}
                   inputMode="numeric"
+                  autoComplete="one-time-code"
                   maxLength={6}
                 />
                 {suError && (
                   <p className="text-sm text-red-500 mb-2">{suError}</p>
                 )}
-
                 <button
                   onClick={verifySignUpOtp}
                   disabled={suLoading || suCode.trim().length < 6}
@@ -510,6 +488,4 @@ const AuthModal = ({ open, onClose, defaultTab = "signin" }: Props) => {
       </div>
     </div>
   );
-};
-
-export default AuthModal;
+}

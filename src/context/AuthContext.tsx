@@ -22,14 +22,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // load current session once
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session ?? null);
       setUser(data.session?.user ?? null);
       setLoading(false);
     });
 
-    // subscribe to future auth changes
     const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
       setSession(sess);
       setUser(sess?.user ?? null);

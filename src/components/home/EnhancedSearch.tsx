@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Calendar, MapPin, Users } from "lucide-react";
 import { DateRange } from "react-date-range";
 import { format } from "date-fns";
 import { supabase } from "../../lib/supabaseClient";
-
 import "react-date-range/dist/styles.css";
 import "react-date-range/dist/theme/default.css";
 
@@ -12,55 +12,89 @@ type EnhancedSearchProps = {
   compact?: boolean;
 };
 
-const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
+function today() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export default function EnhancedSearch({
   showHero = true,
   compact = false,
-}) => {
-  const [location, setLocation] = useState("");
+}: EnhancedSearchProps) {
+  const { search } = useLocation();
+  const params = useMemo(() => new URLSearchParams(search), [search]);
+
+  // ---- init from URL if available ----
+  const initWhere = (params.get("where") || params.get("q") || "").trim();
+  const initAdults = Math.max(1, parseInt(params.get("adults") || "2", 10));
+  const initChildren = Math.max(0, parseInt(params.get("children") || "0", 10));
+  const initRooms = Math.max(1, parseInt(params.get("rooms") || "1", 10));
+
+  const urlStart = params.get("startDate");
+  const urlEnd = params.get("endDate");
+  const start = urlStart ? new Date(urlStart) : today();
+  const end = urlEnd ? new Date(urlEnd) : today();
+
+  const [location, setLocation] = useState(initWhere);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   const [showDate, setShowDate] = useState(false);
   const [dateRange, setDateRange] = useState([
-    {
-      startDate: new Date(),
-      endDate: new Date(),
-      key: "selection",
-    },
+    { startDate: start, endDate: end, key: "selection" as const },
   ]);
 
   const [showGroup, setShowGroup] = useState(false);
-  const [adults, setAdults] = useState(2);
-  const [children, setChildren] = useState(0);
-  const [rooms, setRooms] = useState(1);
+  const [adults, setAdults] = useState(initAdults);
+  const [children, setChildren] = useState(initChildren);
+  const [rooms, setRooms] = useState(initRooms);
 
   useEffect(() => {
-    if (location.trim().length > 1) {
-      supabase
+    if (dateRange[0].startDate! < today()) {
+      setDateRange([{ ...dateRange[0], startDate: today() }]);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const q = location.trim();
+      if (q.length < 2) {
+        if (active) setShowSuggestions(false);
+        return;
+      }
+      const { data } = await supabase
         .from("accommodations")
         .select("address")
-        .ilike("address", `%${location}%`)
-        .then(({ data }) => {
-          const unique = Array.from(new Set(data?.map((d) => d.address)));
-          setSuggestions(unique);
-          setShowSuggestions(true);
-        });
-    } else {
-      setShowSuggestions(false);
-    }
+        .ilike("address", `%${q}%`)
+        .limit(20);
+
+      if (!active) return;
+      const unique = Array.from(
+        new Set((data || []).map((d: any) => d.address))
+      ).slice(0, 8);
+      setSuggestions(unique);
+      setShowSuggestions(unique.length > 0);
+    })();
+    return () => {
+      active = false;
+    };
   }, [location]);
 
   const handleSearch = () => {
-    const query = new URLSearchParams({
-      location,
-      startDate: format(dateRange[0].startDate, "yyyy-MM-dd"),
-      endDate: format(dateRange[0].endDate, "yyyy-MM-dd"),
-      adults: adults.toString(),
-      children: children.toString(),
-      rooms: rooms.toString(),
-    }).toString();
+    const next = new URLSearchParams(params.toString());
 
-    window.location.href = `/search?${query}`;
+    if (location.trim()) next.set("where", location.trim());
+    else next.delete("where");
+
+    next.set("startDate", format(dateRange[0].startDate!, "yyyy-MM-dd"));
+    next.set("endDate", format(dateRange[0].endDate!, "yyyy-MM-dd"));
+    next.set("adults", String(adults));
+    next.set("children", String(children));
+    next.set("rooms", String(rooms));
+
+    window.location.href = `/search?${next.toString()}`;
   };
 
   return (
@@ -78,7 +112,7 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
         )}
 
         <div className="flex flex-col md:flex-row gap-4 justify-center relative">
-          {/* Location Input */}
+          {/* Where */}
           <div className="relative w-full md:w-auto">
             <div className="flex items-center border rounded px-4 py-2">
               <MapPin className="w-4 h-4 mr-2 text-gray-500" />
@@ -87,14 +121,17 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
                 placeholder="Where To"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSearch();
+                }}
                 className="outline-none w-full"
               />
             </div>
             {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute z-50 left-0 right-0 bg-white border mt-1 rounded shadow">
-                {suggestions.map((sug, i) => (
+              <div className="absolute z-50 left-0 right-0 bg-white border mt-1 rounded shadow max-h-72 overflow-auto">
+                {suggestions.map((sug) => (
                   <div
-                    key={i}
+                    key={sug}
                     onClick={() => {
                       setLocation(sug);
                       setShowSuggestions(false);
@@ -108,48 +145,52 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
             )}
           </div>
 
-          {/* Date Picker */}
+          {/* Dates */}
           <div className="relative w-full md:w-auto">
             <div
               className="flex items-center border rounded px-4 py-2 cursor-pointer"
-              onClick={() => setShowDate(!showDate)}
+              onClick={() => setShowDate((s) => !s)}
             >
               <Calendar className="w-4 h-4 mr-2 text-gray-500" />
               <span className="text-gray-700">
-                {format(dateRange[0].startDate, "MMM d")} -{" "}
-                {format(dateRange[0].endDate, "MMM d")}
+                {format(dateRange[0].startDate!, "MMM d")} –{" "}
+                {format(dateRange[0].endDate!, "MMM d")}
               </span>
             </div>
             {showDate && (
-              <div className="absolute z-50 top-14 left-0">
+              <div className="absolute z-50 top-14 left-0 bg-white rounded shadow">
                 <DateRange
                   ranges={dateRange}
                   onChange={(item) => {
                     if (item.selection?.startDate && item.selection?.endDate) {
+                      const s = new Date(item.selection.startDate);
+                      const e = new Date(item.selection.endDate);
+                      const min = today();
+                      if (s < min) s.setTime(min.getTime());
+                      if (e <= s) {
+                        e.setDate(s.getDate() + 1);
+                      }
                       setDateRange([
-                        {
-                          startDate: new Date(item.selection.startDate),
-                          endDate: new Date(item.selection.endDate),
-                          key: "selection",
-                        },
+                        { startDate: s, endDate: e, key: "selection" },
                       ]);
                     }
                   }}
-                  minDate={new Date()}
+                  minDate={today()}
                 />
               </div>
             )}
           </div>
 
-          {/* Group Selector */}
+          {/* Group */}
           <div className="relative w-full md:w-auto">
             <div
               className="flex items-center border rounded px-4 py-2 cursor-pointer"
-              onClick={() => setShowGroup(!showGroup)}
+              onClick={() => setShowGroup((s) => !s)}
             >
               <Users className="w-4 h-4 mr-2 text-gray-500" />
               <span>
-                {adults} adults, {children} children
+                {adults} adults, {children} children, {rooms} room
+                {rooms > 1 ? "s" : ""}
               </span>
             </div>
             {showGroup && (
@@ -190,7 +231,6 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
             )}
           </div>
 
-          {/* Search Button */}
           <button
             className="bg-orange-500 text-white px-6 py-2 rounded hover:bg-orange-600 transition"
             onClick={handleSearch}
@@ -201,6 +241,4 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
       </div>
     </section>
   );
-};
-
-export default EnhancedSearch;
+}

@@ -4,5 +4,4 @@ export const startJourneyPlaceholders = {
   group: "2 adults. 0 children. 1 room",
 };
 
-// SafariCard.tsx
 import React from "react";

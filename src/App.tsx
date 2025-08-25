@@ -4,12 +4,13 @@ import Header from "./components/Header";
 import Home from "./pages/Home";
 import SearchResultsPage from "./pages/SearchResultsPage";
 import AccommodationDetail from "./pages/AccommodationDetail";
-import TestFetch from "./pages/TestFetch";
 import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
 import Profile from "./pages/Profile";
 import RequireAuth from "./components/auth/RequireAuth";
 import EnsureProfile from "./features/auth/EnsureProfile";
+import Bookings from "./pages/Bookings";
+import ExplorePlaces from "./pages/ExplorePlaces";
 
 export default function App() {
   return (
@@ -22,7 +23,6 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<SearchResultsPage />} />
-          <Route path="/test-fetch" element={<TestFetch />} />
           <Route path="/accommodation/:id" element={<AccommodationDetail />} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/signup" element={<SignUp />} />
@@ -34,6 +34,8 @@ export default function App() {
               </RequireAuth>
             }
           />
+          <Route path="/bookings" element={<Bookings />} />
+          <Route path="/explore" element={<ExplorePlaces />} />
         </Routes>
       </main>
     </div>

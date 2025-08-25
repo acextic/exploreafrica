@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabaseClient";
+import {
+  getAllCountries,
+  getCountryByCode,
+  toE164,
+  isValidE164,
+  formatAsYouType,
+  DEFAULT_COUNTRY,
+} from "../constants/countries";
 
 type UserRow = {
   user_id: string;
@@ -11,7 +19,6 @@ type UserRow = {
   country: string | null;
   created_at: string | null;
   updated_at: string | null;
-  user_role: string | null;
 };
 
 const Profile = () => {
@@ -20,96 +27,107 @@ const Profile = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // local edit state
+  const allCountries = getAllCountries();
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [country, setCountry] = useState("");
+
+  const [countryIso, setCountryIso] = useState(DEFAULT_COUNTRY);
+  const [localPhone, setLocalPhone] = useState("");
+  const [prettyPhone, setPrettyPhone] = useState("");
 
   useEffect(() => {
     const load = async () => {
       if (!user) return;
       setError(null);
-
-      // 1) try to fetch from public.users
       const { data, error } = await supabase
         .from("users")
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (error) {
-        setError(error.message);
-      }
+      if (error) setError(error.message);
 
-      // 2) If no row yet (possible if they signed in before sign-up page existed),
-      // bootstrap from auth metadata and upsert.
-      let base: UserRow | null = data as any;
+      let base: UserRow | null = (data as any) || null;
 
       if (!base) {
         const md = user.user_metadata || {};
-        const bootstrap: UserRow = {
+        const bootstrap = {
           user_id: user.id,
           first_name: md.firstName || "",
           last_name: md.lastName || "",
           email: user.email || "",
-          phone_number: md.phone || null,
-          country: md.country || null,
-          user_role: "customer",
+          phone_number: (md.phone as string) || null,
+          country: (md.country as string) || DEFAULT_COUNTRY,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-
         const { error: upErr, data: upData } = await supabase
           .from("users")
           .upsert(bootstrap)
           .select()
           .maybeSingle();
-
-        if (upErr) {
-          setError(upErr.message);
-        } else {
-          base = upData as any;
-        }
+        if (upErr) setError(upErr.message);
+        base = (upData as any) || bootstrap;
       }
 
       if (base) {
         setRow(base);
         setFirstName(base.first_name || "");
         setLastName(base.last_name || "");
-        setPhone(base.phone_number || "");
-        setCountry(base.country || "");
+
+        const iso =
+          (base.country && getCountryByCode(base.country).code) ||
+          DEFAULT_COUNTRY;
+        setCountryIso(iso);
+        const dial = getCountryByCode(iso).dial;
+        const raw = (base.phone_number || "").startsWith(dial)
+          ? (base.phone_number || "").slice(dial.length)
+          : base.phone_number || "";
+        const digits = raw.replace(/\D/g, "");
+        setLocalPhone(digits);
+        setPrettyPhone(formatAsYouType(iso, digits));
       }
     };
 
     load();
   }, [user]);
 
+  useEffect(() => {
+    setPrettyPhone(formatAsYouType(countryIso, localPhone));
+  }, [countryIso, localPhone]);
+
   const save = async () => {
     if (!user || !row) return;
     setSaving(true);
     setError(null);
 
-    // update public.users
+    const e164 = toE164(countryIso, localPhone);
+    if (!isValidE164(countryIso, e164)) {
+      setSaving(false);
+      setError("Please enter a valid phone number for the selected country.");
+      return;
+    }
+
     const patch = {
-      first_name: firstName,
-      last_name: lastName,
-      phone_number: phone || null,
-      country: country || null,
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      phone_number: e164,
+      country: countryIso,
       updated_at: new Date().toISOString(),
     };
+
     const { error: upErr } = await supabase
       .from("users")
       .update(patch)
       .eq("user_id", user.id);
 
-    // also mirror to auth user metadata for admin view
     const { error: mdErr } = await supabase.auth.updateUser({
       data: {
-        firstName,
-        lastName,
-        phone,
-        country,
+        firstName: patch.first_name,
+        lastName: patch.last_name,
+        phone: e164,
+        country: countryIso,
       },
     });
 
@@ -167,30 +185,38 @@ const Profile = () => {
                   readOnly
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Phone</label>
-                <input
-                  className="w-full border rounded px-3 py-2"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-              </div>
+
               <div>
                 <label className="block text-sm font-medium mb-1">
                   Country
                 </label>
+                <select
+                  className="w-full border rounded px-3 py-2"
+                  value={countryIso}
+                  onChange={(e) => setCountryIso(e.target.value)}
+                >
+                  {allCountries.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Phone</label>
                 <input
                   className="w-full border rounded px-3 py-2"
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Role</label>
-                <input
-                  className="w-full border rounded px-3 py-2 bg-gray-50"
-                  value={row.user_role || "customer"}
-                  readOnly
+                  value={prettyPhone}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "");
+                    setLocalPhone(digits);
+                    setPrettyPhone(e.target.value);
+                  }}
+                  placeholder={`${
+                    getCountryByCode(countryIso).dial
+                  } 5551234567`}
+                  inputMode="tel"
                 />
               </div>
             </div>
@@ -211,9 +237,8 @@ const Profile = () => {
               Joined:{" "}
               {row.created_at
                 ? new Date(row.created_at).toLocaleDateString()
-                : "—"}
-              {" · "}
-              Last updated:{" "}
+                : "—"}{" "}
+              · Last updated:{" "}
               {row.updated_at
                 ? new Date(row.updated_at).toLocaleDateString()
                 : "—"}
