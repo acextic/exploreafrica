@@ -1,5 +1,6 @@
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 import { mapGalleryUrls, primaryImageUrl } from "../utils/images";
 import LightboxGallery from "../components/common/LightboxGallery";
@@ -10,6 +11,7 @@ import RoomTypePanel from "../components/booking/RoomTypesPanel";
 import Breadcrumbs from "../components/common/Breadcrumbs";
 import type { RoomType } from "../components/booking/RoomTypesPanel";
 import { formatAmenityKey, normalizeAmenities } from "../utils/amenities";
+import AuthModal from "../components/auth/AuthModal";
 
 type Row = {
   accommodation_id: number;
@@ -54,6 +56,7 @@ export default function AccommodationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { search } = useLocation();
+  const { user } = useAuth();
 
   const [data, setData] = useState<Row | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,6 +75,33 @@ export default function AccommodationDetail() {
   const [rooms, setRooms] = useState<number>(
     Math.max(1, parseInt(params.get("rooms") || "1", 10))
   );
+
+  const [authOpen, setAuthOpen] = useState(false);
+
+  useEffect(() => {
+    if (!authOpen || !user || !data) return;
+    const qs = new URLSearchParams({
+      checkIn,
+      checkOut,
+      adults: String(adults),
+      children: String(children),
+      rooms: String(rooms),
+      price: String(data.price_per_night ?? 0),
+    }).toString();
+    navigate(`/checkout/${id}?${qs}`);
+    setAuthOpen(false);
+  }, [
+    authOpen,
+    user,
+    data,
+    checkIn,
+    checkOut,
+    adults,
+    children,
+    rooms,
+    id,
+    navigate,
+  ]);
 
   useEffect(() => {
     const min = todayISO();
@@ -383,33 +413,63 @@ export default function AccommodationDetail() {
         </div>
 
         <div className="md:col-span-1 space-y-6">
-          <StickyBookingPanel
-            mode="sticky"
-            pricePerNight={data.price_per_night}
-            checkIn={checkIn}
-            checkOut={checkOut}
-            adults={adults}
-            children={children}
-            rooms={rooms}
-            maxCapacity={data.max_capacity ?? undefined}
-            nights={nights}
-            total={isFinite(total) ? total : 0}
-            onChangeCheckIn={(v) => {
-              const min = todayISO();
-              if (!isValidISO(v) || v < min) return;
-              setCheckIn(v);
-              if (checkOut && checkOut <= v) setCheckOut(addDaysISO(v, 1));
-            }}
-            onChangeCheckOut={(v) => {
-              if (!isValidISO(v)) return;
-              if (checkIn && v <= checkIn) return;
-              setCheckOut(v);
-            }}
-            onChangeAdults={(n) => setAdults(Math.max(1, n))}
-            onChangeChildren={(n) => setChildren(Math.max(0, n))}
-            onChangeRooms={(n) => setRooms(Math.max(1, n))}
-            onBook={() => alert("Booking flow coming soon")}
-          />
+          <div>
+            <StickyBookingPanel
+              mode="sticky"
+              pricePerNight={data.price_per_night}
+              checkIn={checkIn}
+              checkOut={checkOut}
+              adults={adults}
+              children={children}
+              rooms={rooms}
+              maxCapacity={data.max_capacity ?? undefined}
+              nights={nights}
+              total={isFinite(total) ? total : 0}
+              onChangeCheckIn={(v) => {
+                const min = todayISO();
+                if (!isValidISO(v) || v < min) return;
+                setCheckIn(v);
+                if (checkOut && checkOut <= v) setCheckOut(addDaysISO(v, 1));
+              }}
+              onChangeCheckOut={(v) => {
+                if (!isValidISO(v)) return;
+                if (checkIn && v <= checkIn) return;
+                setCheckOut(v);
+              }}
+              onChangeAdults={(n) => setAdults(Math.max(1, n))}
+              onChangeChildren={(n) => setChildren(Math.max(0, n))}
+              onChangeRooms={(n) => setRooms(Math.max(1, n))}
+              onBook={() => {
+                if (!data) return;
+
+                if (!user) {
+                  setAuthOpen(true);
+                  return;
+                }
+
+                const qs = new URLSearchParams({
+                  checkIn,
+                  checkOut,
+                  adults: String(adults),
+                  children: String(children),
+                  rooms: String(rooms),
+                  price: String(data.price_per_night ?? 0),
+                }).toString();
+                navigate(`/checkout/${id}?${qs}`);
+              }}
+            />
+
+            {/* Small link below, only visible when logged out */}
+            {!user && (
+              <button
+                type="button"
+                onClick={() => setAuthOpen(true)}
+                className="mt-1 text-xs text-orange-600 underline"
+              >
+                Sign in to book
+              </button>
+            )}
+          </div>
 
           <RoomTypePanel
             rooms={mockRooms}
@@ -420,6 +480,8 @@ export default function AccommodationDetail() {
           />
         </div>
       </div>
+
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
     </section>
   );
 }
