@@ -11,6 +11,7 @@ import RequireAuth from "./components/auth/RequireAuth";
 import EnsureProfile from "./features/auth/EnsureProfile";
 import Bookings from "./pages/Bookings";
 import ExplorePlaces from "./pages/ExplorePlaces";
+import Checkout from "./pages/Checkout";
 
 export default function App() {
   return (
@@ -34,9 +35,17 @@ export default function App() {
               </RequireAuth>
             }
           />
-          <Route path="/bookings" element={<Bookings />} />
+          <Route path="/bookings" element={<RequireAuth><Bookings /></RequireAuth>} />
           <Route path="/explore" element={<ExplorePlaces />} />
-        </Routes>
+                  <Route
+            path="/checkout/:id"
+            element={
+              <RequireAuth>
+                <Checkout />
+              </RequireAuth>
+            }
+          />
+          </Routes>
       </main>
     </div>
   );
