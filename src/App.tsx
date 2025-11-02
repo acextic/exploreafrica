@@ -12,6 +12,8 @@ import EnsureProfile from "./features/auth/EnsureProfile";
 import Bookings from "./pages/Bookings";
 import ExplorePlaces from "./pages/ExplorePlaces";
 import Checkout from "./pages/Checkout";
+import PackagesPage from "./pages/PackagesPage";
+import PackageDetail from "./pages/PackageDetail";
 
 export default function App() {
   return (
@@ -35,9 +37,33 @@ export default function App() {
               </RequireAuth>
             }
           />
-          <Route path="/bookings" element={<RequireAuth><Bookings /></RequireAuth>} />
+          <Route
+            path="/bookings"
+            element={
+              <RequireAuth>
+                <Bookings />
+              </RequireAuth>
+            }
+          />
           <Route path="/explore" element={<ExplorePlaces />} />
-                  <Route
+
+          {/* Packages listing & detail */}
+          <Route path="/packages" element={<PackagesPage />} />
+          <Route path="/package/:id" element={<PackageDetail />} />
+
+          {/* Checkout supports BOTH: 
+              - /checkout?packageId=... (packages)
+              - /checkout/:id?checkIn=... (accommodations)
+          */}
+          <Route
+            path="/checkout"
+            element={
+              <RequireAuth>
+                <Checkout />
+              </RequireAuth>
+            }
+          />
+          <Route
             path="/checkout/:id"
             element={
               <RequireAuth>
@@ -45,7 +71,7 @@ export default function App() {
               </RequireAuth>
             }
           />
-          </Routes>
+        </Routes>
       </main>
     </div>
   );

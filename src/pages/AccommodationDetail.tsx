@@ -351,9 +351,9 @@ export default function AccommodationDetail() {
           {/* Amenities */}
           <div className="bg-white rounded-xl shadow p-5">
             <h2 className="text-xl font-semibold mb-2">Amenities</h2>
-            {amenityKeys.length ? (
+            {normalizeAmenities(data?.amenities).length ? (
               <div className="flex flex-wrap gap-2">
-                {amenityKeys.map((k) => (
+                {normalizeAmenities(data?.amenities).map((k) => (
                   <span
                     key={k}
                     className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm"
@@ -447,6 +447,24 @@ export default function AccommodationDetail() {
                   return;
                 }
 
+                // ✅ guard here too, just in case
+                const hasDates =
+                  !!checkIn &&
+                  !!checkOut &&
+                  /^\d{4}-\d{2}-\d{2}$/.test(checkIn) &&
+                  /^\d{4}-\d{2}-\d{2}$/.test(checkOut);
+                const validRange =
+                  hasDates && new Date(checkOut) > new Date(checkIn);
+                const validTotals =
+                  rooms > 0 &&
+                  adults + children > 0 &&
+                  (data.price_per_night ?? 0) > 0;
+
+                if (!hasDates || !validRange || !validTotals) {
+                  // Optional: show a toast or scroll to date pickers
+                  return;
+                }
+
                 const qs = new URLSearchParams({
                   checkIn,
                   checkOut,
@@ -472,7 +490,47 @@ export default function AccommodationDetail() {
           </div>
 
           <RoomTypePanel
-            rooms={mockRooms}
+            rooms={(() => {
+              const base = data.price_per_night || 0;
+              const gallery = mapGalleryUrls(
+                data.accommodation_images || [],
+                FALLBACK
+              );
+              const hero = primaryImageUrl(
+                data.accommodation_images || [],
+                FALLBACK
+              );
+              return [
+                {
+                  id: "std",
+                  name: "Standard Tent",
+                  sleeps: 2,
+                  bed_type: "Queen",
+                  price_override: Math.round(base * 1.0),
+                  image_url: hero,
+                },
+                {
+                  id: "dlx",
+                  name: "Deluxe Tent",
+                  sleeps: 3,
+                  bed_type: "King",
+                  price_override: Math.round(base * 1.25),
+                  image_url:
+                    gallery[1] ||
+                    "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?q=80&w=1200&auto=format&fit=crop",
+                },
+                {
+                  id: "fam",
+                  name: "Family Suite",
+                  sleeps: 4,
+                  bed_type: "2× Queen",
+                  price_override: Math.round(base * 1.5),
+                  image_url:
+                    gallery[2] ||
+                    "https://images.unsplash.com/photo-1505691938895-1758d7feb511?q=80&w=1200&auto=format&fit=crop",
+                },
+              ] as RoomType[];
+            })()}
             basePrice={data.price_per_night}
             onSelect={(roomId) => {
               console.log("selected room", roomId);

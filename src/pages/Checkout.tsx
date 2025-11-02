@@ -1,7 +1,13 @@
+// src/pages/Checkout.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { createBooking, computeTotal } from "../lib/api/bookings";
+import {
+  createBooking,
+  computeTotal,
+  createPackageBooking,
+  recordPayment,
+} from "../lib/api/bookings";
 import PaymentPlaceholder from "../components/booking/PaymentPlaceholder";
 import { supabase } from "../lib/supabaseClient";
 
@@ -11,7 +17,7 @@ function emailToName(email?: string | null) {
   return local.replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-type CheckoutContext = {
+type StayCtx = {
   accommodation_name: string | null;
   hero_image: string | null;
   destination_name: string | null;
@@ -19,12 +25,27 @@ type CheckoutContext = {
   park_fee_estimate: number | null;
 };
 
+type PackageCtx = {
+  package_name: string | null;
+  hero_image: string | null;
+  operator_name: string | null;
+  duration_days: number | null;
+  price_per_person: number | null;
+};
+
 export default function CheckoutPage() {
   const { user } = useAuth();
   const nav = useNavigate();
-  const { id } = useParams();
+  const { id } = useParams(); // accommodation id for stays
   const [qs] = useSearchParams();
 
+  // ----- detect mode
+  const packageId = Number(qs.get("packageId") || "0");
+  const pkgGuests = Number(qs.get("guests") || "1");
+  const pkgDate = qs.get("date") || "";
+  const mode: "stay" | "package" = packageId > 0 ? "package" : "stay";
+
+  // ----- parsed (stay)
   const parsed = useMemo(() => {
     const check_in_date = qs.get("checkIn") || "";
     const check_out_date = qs.get("checkOut") || "";
@@ -44,16 +65,26 @@ export default function CheckoutPage() {
     };
   }, [qs, id]);
 
-  const money = useMemo(() => computeTotal(parsed), [parsed]);
+  // ----- price math
+  const money = useMemo(
+    () =>
+      mode === "stay"
+        ? computeTotal(parsed)
+        : { nights: 0, guests: pkgGuests, total: 0 },
+    [mode, parsed, pkgGuests]
+  );
   const TAX_RATE = 0.12;
   const [parkFee, setParkFee] = useState(0);
-  const estTaxes = useMemo(() => money.total * TAX_RATE, [money.total]);
+  const estTaxes = useMemo(
+    () => (mode === "stay" ? money.total * TAX_RATE : 0),
+    [mode, money.total]
+  );
   const grandTotal = useMemo(
-    () => money.total + estTaxes + parkFee,
-    [money.total, estTaxes, parkFee]
+    () => (mode === "stay" ? money.total + estTaxes + parkFee : 0),
+    [mode, money.total, estTaxes, parkFee]
   );
 
-  // -------- Guest/contact fields
+  // ----- guest/contact
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
@@ -61,8 +92,9 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // -------- Property context (name/image/destination/park fee)
-  const [ctx, setCtx] = useState<CheckoutContext | null>(null);
+  // ----- header card context (right side)
+  const [stayCtx, setStayCtx] = useState<StayCtx | null>(null);
+  const [pkgCtx, setPkgCtx] = useState<PackageCtx | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -73,7 +105,7 @@ export default function CheckoutPage() {
 
     (async () => {
       try {
-        // 1) Load profile from public.users by auth uid
+        // profile prefill
         if (user) {
           const { data: profile } = await supabase
             .from("users")
@@ -91,97 +123,167 @@ export default function CheckoutPage() {
           }
         }
 
-        // 2) Load accommodation base row
-        if (!parsed.accommodation_id) return;
+        if (mode === "stay") {
+          if (!parsed.accommodation_id) return;
 
-        const { data: acc } = await supabase
-          .from("accommodations")
-          .select("name, destination_id")
-          .eq("accommodation_id", parsed.accommodation_id)
-          .maybeSingle();
-
-        if (!alive || !acc) return;
-
-        // 3) Load first hero image
-        const { data: heroRows } = await supabase
-          .from("accommodation_images")
-          .select("url, image_id")
-          .eq("accommodation_id", parsed.accommodation_id)
-          .order("image_id", { ascending: true })
-          .limit(1);
-
-        const hero_image =
-          (heroRows && heroRows.length ? heroRows[0].url : null) || null;
-
-        // 4) Load destination (name, country_id, entry_fee)
-        let destination_name: string | null = null;
-        let country_name: string | null = null;
-        let park_fee_estimate: number | null = null;
-
-        if (acc.destination_id != null) {
-          const { data: dest } = await supabase
-            .from("destinations")
-            .select("name, country_id, entry_fee")
-            .eq("destination_id", acc.destination_id)
+          // base row
+          const { data: acc } = await supabase
+            .from("accommodations")
+            .select("name, destination_id")
+            .eq("accommodation_id", parsed.accommodation_id)
             .maybeSingle();
+          if (!alive || !acc) return;
 
-          if (dest) {
-            destination_name = dest.name ?? null;
-            park_fee_estimate =
-              dest.entry_fee != null ? Number(dest.entry_fee) : null;
+          // hero
+          const { data: heroRows } = await supabase
+            .from("accommodation_images")
+            .select("url, image_id")
+            .eq("accommodation_id", parsed.accommodation_id)
+            .order("image_id", { ascending: true })
+            .limit(1);
+          const hero_image =
+            (heroRows && heroRows.length ? heroRows[0].url : null) || null;
 
-            if (dest.country_id != null) {
-              const { data: cty } = await supabase
-                .from("countries")
-                .select("name")
-                .eq("country_id", dest.country_id)
-                .maybeSingle();
-              if (cty) country_name = cty.name ?? null;
+          // destination/country/park fee
+          let destination_name: string | null = null;
+          let country_name: string | null = null;
+          let park_fee_estimate: number | null = null;
+
+          if (acc.destination_id != null) {
+            const { data: dest } = await supabase
+              .from("destinations")
+              .select("name, country_id, entry_fee")
+              .eq("destination_id", acc.destination_id)
+              .maybeSingle();
+
+            if (dest) {
+              destination_name = dest.name ?? null;
+              park_fee_estimate =
+                dest.entry_fee != null ? Number(dest.entry_fee) : null;
+
+              if (dest.country_id != null) {
+                const { data: cty } = await supabase
+                  .from("countries")
+                  .select("name")
+                  .eq("country_id", dest.country_id)
+                  .maybeSingle();
+                if (cty) country_name = cty.name ?? null;
+              }
             }
           }
+
+          if (!alive) return;
+          setStayCtx({
+            accommodation_name: acc.name ?? null,
+            hero_image,
+            destination_name,
+            country_name,
+            park_fee_estimate,
+          });
+
+          setParkFee(Number(park_fee_estimate ?? 0) || 0);
+        } else {
+          // package header card info
+          const { data: pkg } = await supabase
+            .from("packages")
+            .select(
+              `
+              package_name, price_per_person, duration_days,
+              tour_companies ( name ),
+              package_images ( url, image_id )
+            `
+            )
+            .eq("package_id", packageId)
+            .maybeSingle();
+
+          if (!alive || !pkg) return;
+
+          const pics = (pkg.package_images || [])
+            .slice()
+            .sort(
+              (a: any, b: any) => (a.image_id ?? 1e9) - (b.image_id ?? 1e9)
+            );
+          const hero_image = pics.length ? pics[0]?.url ?? null : null;
+
+          // Supabase can return an array for a 1-1 relation; pick first if so.
+          const companyRel = (pkg as any).tour_companies;
+          const company = Array.isArray(companyRel)
+            ? companyRel[0]
+            : companyRel;
+
+          setPkgCtx({
+            package_name: pkg.package_name ?? null,
+            hero_image,
+            operator_name: company?.name ?? null,
+            duration_days: pkg.duration_days ?? null,
+            price_per_person: pkg.price_per_person ?? null,
+          });
         }
-
-        if (!alive) return;
-
-        setCtx({
-          accommodation_name: acc.name ?? null,
-          hero_image,
-          destination_name,
-          country_name,
-          park_fee_estimate,
-        });
-
-        setParkFee(Number(park_fee_estimate ?? 0) || 0);
-      } catch {}
+      } catch {
+        // silent – we still allow checkout even if side info failed to load
+      }
     })();
 
     return () => {
       alive = false;
     };
-  }, [user, parsed.accommodation_id]);
+  }, [user, parsed.accommodation_id, mode, packageId]);
 
-  // -------- Submission
+  // ----- submission guard
   const canSubmit =
     !!user &&
-    parsed.accommodation_id > 0 &&
-    !!parsed.check_in_date &&
-    !!parsed.check_out_date &&
-    money.nights > 0 &&
-    parsed.nightly_price > 0 &&
-    !!fullName.trim() &&
-    paid &&
-    !submitting;
+    !submitting &&
+    (mode === "stay"
+      ? parsed.accommodation_id > 0 &&
+        !!parsed.check_in_date &&
+        !!parsed.check_out_date &&
+        money.nights > 0 &&
+        parsed.nightly_price > 0 &&
+        !!fullName.trim() &&
+        paid
+      : packageId > 0 &&
+        !!pkgDate &&
+        pkgGuests > 0 &&
+        !!fullName.trim() &&
+        paid);
 
+  // ----- submit
   const submit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
     try {
-      await createBooking({
-        ...parsed,
-        guest_phone: phone || null,
-        special_requests: note || null,
-      });
+      if (mode === "stay") {
+        const booking = await createBooking({
+          ...parsed,
+          guest_phone: phone || null,
+          special_requests: note || null,
+        });
+
+        // simulate a successful payment – DB trigger sets amount from booking
+        await recordPayment({
+          booking_id: booking.booking_id,
+          method: "card",
+          status: "paid",
+          transaction_ref: booking.confirmation_number,
+        });
+      } else {
+        const booking = await createPackageBooking({
+          package_id: packageId,
+          travel_date: pkgDate,
+          guests: pkgGuests,
+          guest_phone: phone || null,
+          special_requests: note || null,
+        });
+
+        await recordPayment({
+          booking_id: booking.booking_id,
+          method: "card",
+          status: "paid",
+          transaction_ref: booking.confirmation_number,
+        });
+      }
+
       nav("/bookings");
     } catch (e: any) {
       setError(e?.message || "Failed to create booking");
@@ -190,6 +292,7 @@ export default function CheckoutPage() {
     }
   };
 
+  // ----- UI
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-semibold">Checkout</h1>
@@ -245,7 +348,7 @@ export default function CheckoutPage() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 className="mt-1 w-full border rounded px-3 py-2"
-                placeholder="e.g., Late arrival, dietary needs"
+                placeholder="e.g., Dietary needs"
               />
             </div>
           </div>
@@ -276,25 +379,25 @@ export default function CheckoutPage() {
           ) : null}
         </section>
 
-        {/* RIGHT: property card + summary + breakdown + payment + policies */}
+        {/* RIGHT: property/package card + summary + payment + policies */}
         <aside className="rounded-xl bg-white shadow p-5 space-y-5">
-          {/* Property card */}
-          {ctx && (
+          {/* Card header */}
+          {mode === "stay" && stayCtx && (
             <div className="flex items-center gap-3">
               <img
                 src={
-                  ctx.hero_image ||
+                  stayCtx.hero_image ||
                   "https://source.unsplash.com/featured/?safari,camp"
                 }
-                alt={ctx.accommodation_name || "Accommodation"}
+                alt={stayCtx.accommodation_name || "Accommodation"}
                 className="w-16 h-16 object-cover rounded-lg"
               />
               <div className="min-w-0">
                 <div className="font-medium truncate">
-                  {ctx.accommodation_name || "Accommodation"}
+                  {stayCtx.accommodation_name || "Accommodation"}
                 </div>
                 <div className="text-xs text-gray-600 truncate">
-                  {[ctx.destination_name, ctx.country_name]
+                  {[stayCtx.destination_name, stayCtx.country_name]
                     .filter(Boolean)
                     .join(", ")}
                 </div>
@@ -302,76 +405,127 @@ export default function CheckoutPage() {
             </div>
           )}
 
+          {mode === "package" && pkgCtx && (
+            <div className="flex items-center gap-3">
+              <img
+                src={
+                  pkgCtx.hero_image ||
+                  "https://source.unsplash.com/featured/?safari,travel"
+                }
+                alt={pkgCtx.package_name || "Package"}
+                className="w-16 h-16 object-cover rounded-lg"
+              />
+              <div className="min-w-0">
+                <div className="font-medium truncate">
+                  {pkgCtx.package_name || "Tour package"}
+                </div>
+                <div className="text-xs text-gray-600 truncate">
+                  {pkgCtx.operator_name || "Operator"}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Summary */}
           <div>
             <h3 className="text-lg font-semibold">Summary</h3>
-            <div className="mt-2 space-y-2 text-sm text-gray-700">
-              <div>
-                Check-in: <b>{parsed.check_in_date || "—"}</b>
+            {mode === "stay" ? (
+              <div className="mt-2 space-y-2 text-sm text-gray-700">
+                <div>
+                  Check-in: <b>{parsed.check_in_date || "—"}</b>
+                </div>
+                <div>
+                  Check-out: <b>{parsed.check_out_date || "—"}</b>
+                </div>
+                <div>
+                  Guests:{" "}
+                  <b>
+                    {parsed.adults} adult(s)
+                    {parsed.children ? `, ${parsed.children} child` : ""}
+                  </b>
+                </div>
+                <div>
+                  Rooms: <b>{parsed.rooms}</b>
+                </div>
+                <div>
+                  Nightly price: <b>${parsed.nightly_price.toFixed(2)}</b>
+                </div>
+                <div>
+                  Nights: <b>{money.nights}</b>
+                </div>
               </div>
-              <div>
-                Check-out: <b>{parsed.check_out_date || "—"}</b>
+            ) : (
+              <div className="mt-2 space-y-2 text-sm text-gray-700">
+                <div>
+                  Travel date: <b>{pkgDate || "—"}</b>
+                </div>
+                <div>
+                  Guests: <b>{pkgGuests}</b>
+                </div>
+                <div>
+                  Price per person:{" "}
+                  <b>${(pkgCtx?.price_per_person ?? 0).toFixed(2)}</b>
+                </div>
+                <div className="border-t pt-2 flex justify-between font-medium">
+                  <span>Subtotal</span>
+                  <span>
+                    $
+                    {(
+                      (pkgCtx?.price_per_person ?? 0) * Math.max(1, pkgGuests)
+                    ).toFixed(2)}
+                  </span>
+                </div>
               </div>
-              <div>
-                Guests:{" "}
-                <b>
-                  {parsed.adults} adult(s)
-                  {parsed.children ? `, ${parsed.children} child` : ""}
-                </b>
-              </div>
-              <div>
-                Rooms: <b>{parsed.rooms}</b>
-              </div>
-              <div>
-                Nightly price: <b>${parsed.nightly_price.toFixed(2)}</b>
-              </div>
-              <div>
-                Nights: <b>{money.nights}</b>
-              </div>
-            </div>
+            )}
           </div>
 
-          <div>
-            <h4 className="text-base font-semibold">Price breakdown</h4>
-            <div className="mt-2 text-sm text-gray-700 space-y-1">
-              <div className="flex justify-between">
-                <span>
-                  {parsed.rooms} room(s) × {money.nights} night(s) × $
-                  {parsed.nightly_price.toFixed(2)}
-                </span>
-                <span>${money.total.toFixed(2)}</span>
+          {/* Price breakdown (stays only) */}
+          {mode === "stay" && (
+            <div>
+              <h4 className="text-base font-semibold">Price breakdown</h4>
+              <div className="mt-2 text-sm text-gray-700 space-y-1">
+                <div className="flex justify-between">
+                  <span>
+                    {parsed.rooms} room(s) × {money.nights} night(s) × $
+                    {parsed.nightly_price.toFixed(2)}
+                  </span>
+                  <span>${money.total.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Estimated taxes ({Math.round(TAX_RATE * 100)}%)</span>
+                  <span>${estTaxes.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Estimated park fees</span>
+                  <span>${parkFee.toFixed(2)}</span>
+                </div>
+                <div className="border-t pt-2 flex justify-between font-medium">
+                  <span>Total</span>
+                  <span>${grandTotal.toFixed(2)}</span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Taxes/fees are estimates and may vary by destination or
+                  property rules.
+                </p>
               </div>
-              <div className="flex justify-between">
-                <span>Estimated taxes ({Math.round(TAX_RATE * 100)}%)</span>
-                <span>${estTaxes.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Estimated park fees</span>
-                <span>${parkFee.toFixed(2)}</span>
-              </div>
-              <div className="border-t pt-2 flex justify-between font-medium">
-                <span>Total</span>
-                <span>${grandTotal.toFixed(2)}</span>
-              </div>
-              <p className="text-xs text-gray-500">
-                Taxes/fees are estimates and may vary by destination or property
-                rules.
-              </p>
             </div>
-          </div>
+          )}
 
+          {/* Payment */}
           <div>
             <h4 className="text-base font-semibold">Payment</h4>
             <PaymentPlaceholder onPaidChange={setPaid} />
           </div>
 
+          {/* Policies */}
           <div>
             <h4 className="text-base font-semibold">Policies</h4>
             <ul className="mt-2 text-xs text-gray-600 list-disc pl-5 space-y-1">
               <li>
-                Free cancellation up to 48 hours before check-in (property rules
-                may vary).
+                Free cancellation up to 48 hours before start (operator/property
+                rules may vary).
               </li>
-              <li>Government-issued ID may be required at check-in.</li>
+              <li>Government-issued ID may be required.</li>
               <li>
                 All guests must follow local park and wildlife regulations.
               </li>
