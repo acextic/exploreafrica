@@ -104,7 +104,12 @@ const Header = () => {
 
             <div className="flex items-center gap-3">
               <button className="border px-3 py-1 rounded">Things to do</button>
-              <button className="border px-3 py-1 rounded">Trip Planner</button>
+              <button
+                className="border px-3 py-1 rounded text-orange-600 hover:bg-orange-50"
+                onClick={() => navigate("/trip-planner")}
+              >
+                Trip Planner
+              </button>
 
               <button
                 className="relative rounded p-2 hover:bg-gray-100"

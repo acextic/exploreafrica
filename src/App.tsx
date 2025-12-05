@@ -14,6 +14,7 @@ import ExplorePlaces from "./pages/ExplorePlaces";
 import Checkout from "./pages/Checkout";
 import PackagesPage from "./pages/PackagesPage";
 import PackageDetail from "./pages/PackageDetail";
+import TripPlannerPage from "./pages/TripPlannerPage";
 
 export default function App() {
   return (
@@ -50,6 +51,7 @@ export default function App() {
           {/* Packages listing & detail */}
           <Route path="/packages" element={<PackagesPage />} />
           <Route path="/package/:id" element={<PackageDetail />} />
+          <Route path="/trip-planner" element={<TripPlannerPage />} />
 
           {/* Checkout supports BOTH: 
               - /checkout?packageId=... (packages)
