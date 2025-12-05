@@ -78,6 +78,23 @@ export default function StickyBookingPanel({
   const incRooms = () => onChangeRooms?.(rooms + 1);
   const decRooms = () => onChangeRooms?.(Math.max(1, rooms - 1));
 
+  // ✅ only enable booking when the inputs are valid
+  const hasDates =
+    !!checkIn &&
+    !!checkOut &&
+    /^\d{4}-\d{2}-\d{2}$/.test(checkIn) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(checkOut);
+
+  const validRange = hasDates && new Date(checkOut) > new Date(checkIn);
+  const validTotals =
+    rooms > 0 &&
+    adults + children > 0 &&
+    nights > 0 &&
+    pricePerNight > 0 &&
+    total > 0;
+
+  const canBook = hasDates && validRange && validTotals;
+
   const Card = (
     <div className="bg-white rounded-xl shadow p-4 md:p-5 w-full">
       <div className="text-xl font-semibold">
@@ -193,8 +210,17 @@ export default function StickyBookingPanel({
       </div>
 
       <button
-        className="mt-3 w-full bg-orange-500 hover:bg-orange-600 text-white rounded px-4 py-2"
-        onClick={onBook}
+        className={
+          "mt-3 w-full rounded px-4 py-2 text-white " +
+          (canBook
+            ? "bg-orange-500 hover:bg-orange-600"
+            : "bg-gray-400 cursor-not-allowed")
+        }
+        onClick={() => {
+          if (!canBook) return;
+          onBook();
+        }}
+        disabled={!canBook}
       >
         Book now
       </button>

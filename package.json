@@ -5,12 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-  "build": "tsc -b && vite build",
-  "lint": "eslint .",
-  "preview": "vite preview",
-
-  "prune": "ts-prune", 
-  "clean:check": "depcheck"
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "prune": "ts-prune",
+    "clean:check": "depcheck"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.3",

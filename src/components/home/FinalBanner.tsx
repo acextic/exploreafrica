@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 
 const FinalBanner = () => {
   return (
@@ -17,9 +18,11 @@ const FinalBanner = () => {
           To endless adventures filled with unforgettable moments and lifetime
           memories
         </p>
-        <button className="bg-white text-orange-500 font-semibold px-4 py-2 rounded hover:bg-gray-100 transition">
-          Explore our packages
-        </button>
+        <Link to="/packages" className="inline-block">
+          <button className="bg-white text-orange-500 font-semibold px-4 py-2 rounded hover:bg-gray-100 transition">
+            Explore our packages
+          </button>
+        </Link>
       </div>
     </section>
   );

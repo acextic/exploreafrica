@@ -89,7 +89,17 @@ const Header = () => {
                 Explore Places
               </NavLink>
 
-              <a href="#">Tours</a>
+              <NavLink
+                to="/packages"
+                className={({ isActive }) =>
+                  classNames(
+                    "hover:underline",
+                    isActive ? "text-orange-600 font-semibold" : "text-gray-700"
+                  )
+                }
+              >
+                Tours
+              </NavLink>
             </nav>
 
             <div className="flex items-center gap-3">
